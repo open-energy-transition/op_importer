@@ -1,37 +1,40 @@
-from op_importer.validate import validate
+from op_importer.data_model import WorkPackage
+from op_importer.validate import ValidateWorkPackage, validate
 
 
-def test_validate_empty_payload():
+class TestValidateWorkPackage:
 
-    payload = {}
+    def test_validate_valid_payload(self):
 
-    status = validate(payload, asset='work_package')
+        payload = WorkPackage(
+            subject="Test Work Package",
+            description="This is a test work package.",
+            project=3,
+            work_package_type=3,
+            status=1,
+        )
 
-    assert isinstance(status, list), \
-        f"Expected a list of validation errors, but got {type(status)}"
-    assert len(status) > 0, \
-        "Expected at least one validation error, but got none"
-    for error in status:
-        assert "field" in error and "message" in error, \
-            f"Each validation error should contain 'field' and 'message', \
-                but got {error}"
+        actual = validate(payload)
 
+        assert isinstance(
+            actual, list
+        ), f"Expected a list of validation errors, but got {type(actual)}"
+        assert (
+            len(actual) == 0
+        ), f"Expected no validation errors, but got {len(actual)}: {actual}"
 
-def test_validate_valid_payload():
+    def test_get_form_work_package(self):
 
-    payload = {
-        "subject": "Test Work Package",
-        "project": {
-            "href": "/api/v3/projects/1"
-        },
-        "type": {
-            "href": "/api/v3/types/1"
-        },
-    }
-
-    actual = validate(payload, asset='work_package')
-
-    assert isinstance(actual, list), \
-        f"Expected a list of validation errors, but got {type(actual)}"
-    assert len(actual) == 0, \
-        f"Expected no validation errors, but got {len(actual)}: {actual}"
+        payload = {
+            "subject": "Test Work Package",
+            "description": "This is a test work package.",
+            "project": {"href": "/api/v3/projects/3"},
+            "type": {"href": "/api/v3/types/3"},
+            "status": {"href": "/api/v3/statuses/1"},
+        }
+        validator = ValidateWorkPackage(payload)
+        status_code, response = validator.get_form(payload)
+        assert status_code == 200, f"Expected status code 200, but got {status_code}"
+        assert isinstance(
+            response, dict
+        ), f"Expected response to be a dict, but got {type(response)}"
