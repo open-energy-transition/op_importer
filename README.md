@@ -88,5 +88,5 @@ Restore dump in psql
 
 Once this has finished you can quit psql (using \q) and the container (exit).
 
-Start the container as described in the installation section mounting `/var/lib/openproject/pgdata` 
+Start the container as described in the installation section mounting `/var/lib/openproject/pgdata`
 (and `/var/lib/openproject/assets/` for attachments).
