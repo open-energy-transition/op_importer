@@ -13,7 +13,7 @@ def test_work_package_serialization():
 
     expected_serialized = {
         "subject": "Test Work Package",
-        "description": "This is a test work package",
+        "description": {"raw": "This is a test work package", "format": "markdown"},
         "project": {"href": "/api/v3/projects/3"},
         "type": {"href": "/api/v3/types/3"},
         "status": {"href": "/api/v3/statuses/1"},

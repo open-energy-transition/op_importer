@@ -8,6 +8,10 @@ class WorkPackage(BaseModel):
     work_package_type: PositiveInt = Field(..., serialization_alias="type")
     status: PositiveInt | None = None
 
+    @field_serializer("description", mode="plain")
+    def serialize_description(self, value: str | None) -> dict | None:
+        return {"raw": value, "format": "markdown"}
+
     @field_serializer("project", mode="plain")
     def serialize_project(self, value: PositiveInt) -> dict:
         return {"href": f"/api/v3/projects/{value}"}
