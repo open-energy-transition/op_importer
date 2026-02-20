@@ -1,8 +1,29 @@
 # Python TUI for Importing Tasks to OpenProject
 
+To run the Textual App:
+
+    $ pixi run start
+
 To install the package locally:
 
     $ pip install op_importer
+
+## Getting Started
+
+Obtain an API key from your OpenProject installation. See [here]() for how.
+
+Paste the key into a `.env` file in your working directory together with the URL for your
+OpenProject:
+
+    OPENPROJECT_API_KEY="<yourAPIkeywillhavelotsoflettersandnumbers02938329909809098089>"
+    OPENPROJECT_API_URL="https://my.openproject.com/api/v3"
+
+Prepare a csv file with the exact headers::
+
+    subject,description,project,status,work_package_type,startDate,dueDate
+
+Run the App from the command line, select your CSV file and upload your new work packages
+to your OpenProject installation
 
 ## Develop op_importer
 
@@ -28,8 +49,9 @@ Run the tests
 
 ## Install and Maintain OpenProject
 
-
-
+If you want to test op_importer locally, you'll need to setup an
+install of OpenProject. The easiest way to do this is via a Docker
+container.
 
 Generate a random secret:
 
@@ -38,7 +60,7 @@ Generate a random secret:
 Spin up the container
 
     sudo docker run -d -p 8080:80 --name openproject \
-    -e SECRET_KEY_BASE=0roDPanCrWh2TTB1tMCsDtbRwwJV0w55 \
+    -e SECRET_KEY_BASE=<your random secret> \
     -e OPENPROJECT_HOST__NAME=localhost:8080 \
     -e OPENPROJECT_HTTPS=false \
     -e OPENPROJECT_DEFAULT__LANGUAGE=en \
