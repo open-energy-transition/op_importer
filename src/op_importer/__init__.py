@@ -1,15 +1,18 @@
 from collections import OrderedDict
-from logging import getLogger
+from logging import basicConfig, getLogger
 
 from pydantic import ValidationError
+from textual.logging import TextualHandler
 
 from . import validate
-from .data_model import WorkPackage
+from .data_model import ValidationResponseList, WorkPackage
+
+basicConfig(level="NOTSET", handlers=[TextualHandler()])
 
 logger = getLogger(__name__)
 
 
-def extract_validation_errors(validation_errors: list) -> list:
+def extract_validation_errors(validation_errors: list) -> list[dict[str, str]]:
     """Extract validation errors from the results returned by the API.
 
     Parameters
@@ -27,11 +30,11 @@ def extract_validation_errors(validation_errors: list) -> list:
     errors = []
     for error in validation_errors:
         logger.info(f" - Field: {error['field']}, Message: {error['message']}")
-    errors.append(error)
+        errors.append(error)
     return errors
 
 
-def main(input_file: list[dict]) -> dict:
+def main(input_file: list[dict]) -> ValidationResponseList:
     """Validate and Ingest a list of work packages
 
     Parameters
@@ -49,33 +52,29 @@ def main(input_file: list[dict]) -> dict:
         ``input_file`` are validated by the API and the work packages are
         ingested.
     """
-
-    validation_errors: OrderedDict = OrderedDict()
-    result = {"validation_errors": validation_errors, "validation_status": True}
+    result = ValidationResponseList(validation_status=True, validation_errors=OrderedDict())
 
     for index, item in enumerate(input_file):
-        validation_results = []
+        error_list = []
         # Use Pydantic model to validate the input data structure and types
         # before sending to API
         try:
             payload = WorkPackage(**item)
         except ValidationError as exc:
             for error in exc.errors():
-                validation_results.append(
-                    {"field": error["loc"][0], "message": error["msg"]}
-                )
-                logger.info(
-                    f"Validation error for item {error['loc'][0]} - {error['msg']}"
-                )
-            result["validation_status"] = False
+                error_list.append({"field": error["loc"][0], "message": error["msg"]})
+                logger.info(f"Validation error for item {error['loc'][0]} - {error['msg']}")
+            result.validation_status = False
         else:
-            errors = validate.validate(payload)
-            if errors:
-                validation_results.extend(extract_validation_errors(errors))
-                result["validation_status"] = False
+            response = validate.validate(payload)  # typing: ValidationResponse
+            if response.validation_status is False:
+                errors = response.validation_errors
+                error_list.extend(extract_validation_errors(errors))
+                result.validation_status = False
             else:
                 logger.info(f"Item '{item.get('subject', 'Unknown')}' is valid.")
+                result.validation_results = response.validation_results
 
-        result["validation_errors"][index] = validation_results
+        result.validation_errors[index] = error_list
 
     return result

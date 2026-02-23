@@ -9,8 +9,8 @@ from requests.auth import HTTPBasicAuth
 
 load_dotenv()
 
-API_URL = getenv("OPENPROJECT_API_URL", "https://oet.openproject.com/api/v3")
-API_KEY = getenv("OPENPROJECT_API_KEY", "")
+API_URL = getenv("OPENPROJECT_API_URL", "")
+API_KEY: str = getenv("OPENPROJECT_API_KEY", "")
 
 HEADERS = {"Content-Type": "application/json"}
 AUTH = HTTPBasicAuth("apikey", API_KEY)

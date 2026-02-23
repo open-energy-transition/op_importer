@@ -8,18 +8,20 @@ and valid values according to the OpenProject API specifications.
 
 from logging import getLogger
 from os import getenv
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
 
-from .data_model import WorkPackage
+from .data_model import ValidationResponse, WorkPackage
+from .get_data import get_projects, get_types
 
 logger = getLogger(__name__)
 load_dotenv()
 
-API_URL = getenv("OPENPROJECT_API_URL", "https://oet.openproject.com/api/v3")
-API_KEY = getenv("OPENPROJECT_API_KEY", "")
+API_URL: str = getenv("OPENPROJECT_API_URL", "")
+API_KEY: str = getenv("OPENPROJECT_API_KEY", "")
 
 HEADERS = {"Content-Type": "application/json"}
 AUTH = HTTPBasicAuth("apikey", API_KEY)
@@ -28,14 +30,56 @@ AUTH = HTTPBasicAuth("apikey", API_KEY)
 class Validate:
     """Base class for validating data for OpenProject API requests."""
 
-    def __init__(self, payload: dict):
-        self.payload = payload
+    def __init__(self, payload: WorkPackage):
+        self._payload: WorkPackage = payload
         self._errors: list[dict[str, str]] = []
         self.validated_response: dict = {}
 
-    def validate(self) -> bool:
+    def validate_project_id(self) -> bool:
+        """Validate that the provided project ID exists in OpenProject."""
+        project_id = self.payload.project
+        projects = get_projects()
+        project_ids = [project["id"] for project in projects["_embedded"]["elements"]]
+        if project_id not in project_ids:
+            self.errors.append(
+                {
+                    "field": "project",
+                    "message": f"Project with ID {project_id} does not exist.",
+                }
+            )
+            return False
+        return True
 
-        status, response = self.get_form(self.payload)
+    def validate_type_id(self) -> bool:
+        """Validate that the provided type ID exists in OpenProject."""
+        type_id = self.payload.work_package_type
+        types = get_types()
+        type_ids = [type_["id"] for type_ in types["_embedded"]["elements"]]
+        if type_id not in type_ids:
+            self.errors.append(
+                {
+                    "field": "work_package_type",
+                    "message": f"Type with ID {type_id} does not exist.",
+                }
+            )
+            return False
+        return True
+
+    def validate(self) -> bool:
+        """Validate the provided payload against the OpenProject API form.
+
+        If validation is successful, stores the validated response
+        in ``self.validated_response``
+        """
+
+        result = self.validate_project_id()
+        if not result:
+            return False
+        result = self.validate_type_id()
+        if not result:
+            return False
+
+        status, response = self.get_form()
         print("Status:", status)
         logger.info(f"Validation response: {response}")
         if status == 200:
@@ -59,66 +103,63 @@ class Validate:
     def errors(self, value: list[dict[str, str]]):
         self._errors = value
 
-    def get_form(self, payload: dict) -> tuple[int, dict]:
-        """Method to be implemented by subclasses to fetch the appropriate form for validation."""
-        raise NotImplementedError("Subclasses must implement the get_form method.")
+    @property
+    def payload(self) -> WorkPackage:
+        return self._payload
+
+    @property
+    def payload_json(self) -> dict[str, Any]:
+        return self._payload.model_dump(by_alias=True)
+
+    def get_form(self) -> tuple[int, dict]:
+        """Method to be implemented by subclasses to fetch form for validation.
+
+        Method should access ``self.payload_json`` to get the serialized
+        payload for validation.
+        """
+        raise NotImplementedError("Subclasses must implement get_form.")
 
 
 class ValidateWorkPackage(Validate):
 
-    def get_form(self, payload_json: dict) -> tuple[int, dict]:
+    def get_form(self) -> tuple[int, dict]:
         """Validates the provided payload against the OpenProject API form"""
         url = f"{API_URL}/work_packages/form"
-        response = requests.post(url, headers=HEADERS, auth=AUTH, json=payload_json)
+        response = requests.post(url, headers=HEADERS, auth=AUTH, json=self.payload_json)
         return response.status_code, response.json()
 
 
 class ValidateProjectWorkPackage(Validate):
 
-    def get_form(self, payload_json: dict) -> tuple[int, dict]:
+    def get_form(self) -> tuple[int, dict]:
         """Validates the provided payload against the OpenProject API form"""
-        project_id = payload_json["project"]["href"].split("/")[-1]
+        project_id = self.payload.project
         url = f"{API_URL}/work_spaces/{project_id}/work_packages/form"
-        response = requests.post(url, headers=HEADERS, auth=AUTH, json=payload_json)
+        response = requests.post(url, headers=HEADERS, auth=AUTH, json=self.payload_json)
         return response.status_code, response.json()
 
 
 class GetValidator:
 
-    # def return_validator(self, asset: str) -> Validate:
-    #     raise NotImplementedError(
-    #             f"Validation for asset type '{asset}' is not implemented."
-    #         )
-
     def select_validator(self, payload: WorkPackage) -> Validate:
-        payload_json = payload.model_dump(by_alias=True)
         if isinstance(payload, WorkPackage):
-            validator = ValidateWorkPackage(payload_json)
+            validator = ValidateWorkPackage(payload)
         elif isinstance(payload, WorkPackage) and hasattr(payload, "project"):
-            validator = ValidateProjectWorkPackage(payload_json)
+            validator = ValidateProjectWorkPackage(payload)
         else:
             raise NotImplementedError("Validation for asset type is not implemented.")
         return validator
 
 
-# class GetWorkPackageValidator(GetValidator):
-
-#     def return_validator(self, asset: str) -> Validate:
-#         return ValidateWorkPackage
-
-
-# class GetProjectWorkPackageValidator(GetValidator):
-
-#     def return_validator(self, asset: str) -> Validate:
-#         return ValidateProjectWorkPackage
-
-
-def validate(payload: WorkPackage) -> list:
+def validate(payload: WorkPackage) -> ValidationResponse:
 
     validator = GetValidator()
     validator_instance = validator.select_validator(payload)
     status = validator_instance.validate()
-    if status is True:
-        return []
-    else:
-        return validator_instance.errors
+
+    response = ValidationResponse(
+        validation_status=status,
+        validation_errors=validator_instance.errors,
+        validation_results=validator_instance.validated_response if status else None,
+    )
+    return response

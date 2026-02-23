@@ -3,6 +3,18 @@ from datetime import datetime
 from pydantic import BaseModel, Field, PositiveInt, field_serializer
 
 
+class ValidationResponse(BaseModel):
+    validation_status: bool
+    validation_errors: list[dict[str, str]]
+    validation_results: dict | None = None
+
+
+class ValidationResponseList(BaseModel):
+    validation_status: bool
+    validation_errors: dict[int, list[dict[str, str]]]
+    validation_results: dict[int, dict] | None = None
+
+
 class WorkPackage(BaseModel):
     subject: str
     description: str | None = None
