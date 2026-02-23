@@ -1,7 +1,7 @@
 [project]
 name = "op_importer"
 requires-python = ">= 3.13"
-scripts = { op_import = "op_importer:main" }
+scripts = { op_import = "op_importer.app:app" }
 version = "0.1.0"
 dependencies = ["python-dotenv>=1.2.1,<2", "pytest"]
 
@@ -32,6 +32,7 @@ start = "op_import"
 requests = ">=2.32.5,<3"
 pytest = ">=9.0.2,<10"
 pydantic = ">=2.10.4,<3"
+textual = ">=0.34.0,<1"
 
 [tool.pixi.feature.test.tasks]
 test = "pytest"
