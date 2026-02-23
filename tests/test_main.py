@@ -78,62 +78,124 @@ def test_ingest_valid(valid_input_file):
     # assert actual["validation_status"] is True
     assert actual.validation_errors == OrderedDict({0: [], 1: []})
     assert actual.validation_results == {
-        "_links": {
-            "assignee": {
-                "href": None,
+        0: {
+            "subject": "Test Work Package",
+            "description": {
+                "format": "markdown",
+                "html": '<p class="op-uc-p">This is a test work package</p>',
+                "raw": "This is a test work package",
             },
-            "budget": {
-                "href": None,
-            },
-            "category": {
-                "href": None,
-            },
-            "parent": {
-                "href": None,
-                "title": None,
-            },
-            "priority": {
-                "href": "/api/v3/priorities/8",
-                "title": "Normal",
-            },
-            "project": {
-                "href": "/api/v3/projects/5",
-                "title": "Other Projects",
-            },
-            "projectPhase": {
-                "href": None,
-                "title": None,
-            },
-            "projectPhaseDefinition": {
-                "href": None,
-                "title": None,
-            },
-            "responsible": {
-                "href": None,
-            },
-            "status": {
-                "href": "/api/v3/statuses/1",
-                "title": "New",
-            },
-            "type": {
-                "href": "/api/v3/types/1",
-                "title": "Task",
-            },
-            "version": {
-                "href": None,
+            "dueDate": None,
+            "duration": None,
+            "estimatedTime": None,
+            "ignoreNonWorkingDays": False,
+            "percentageDone": None,
+            "scheduleManually": True,
+            "startDate": None,
+            "_links": {
+                "assignee": {
+                    "href": None,
+                },
+                "budget": {
+                    "href": None,
+                },
+                "category": {
+                    "href": None,
+                },
+                "parent": {
+                    "href": None,
+                    "title": None,
+                },
+                "priority": {
+                    "href": "/api/v3/priorities/8",
+                    "title": "Normal",
+                },
+                "project": {
+                    "href": "/api/v3/projects/5",
+                    "title": "Other Projects",
+                },
+                "projectPhase": {
+                    "href": None,
+                    "title": None,
+                },
+                "projectPhaseDefinition": {
+                    "href": None,
+                    "title": None,
+                },
+                "responsible": {
+                    "href": None,
+                },
+                "status": {
+                    "href": "/api/v3/statuses/1",
+                    "title": "New",
+                },
+                "type": {
+                    "href": "/api/v3/types/3",
+                    "title": "Summary task",
+                },
+                "version": {
+                    "href": None,
+                },
             },
         },
-        "description": {
-            "format": "markdown",
-            "html": '<p class="op-uc-p">This is another test work package</p>',
-            "raw": "This is another test work package",
+        1: {
+            "subject": "Test Work Package 2",
+            "description": {
+                "format": "markdown",
+                "html": '<p class="op-uc-p">This is another test work package</p>',
+                "raw": "This is another test work package",
+            },
+            "dueDate": None,
+            "duration": None,
+            "estimatedTime": None,
+            "ignoreNonWorkingDays": False,
+            "percentageDone": None,
+            "scheduleManually": True,
+            "startDate": None,
+            "_links": {
+                "assignee": {
+                    "href": None,
+                },
+                "budget": {
+                    "href": None,
+                },
+                "category": {
+                    "href": None,
+                },
+                "parent": {
+                    "href": None,
+                    "title": None,
+                },
+                "priority": {
+                    "href": "/api/v3/priorities/8",
+                    "title": "Normal",
+                },
+                "project": {
+                    "href": "/api/v3/projects/5",
+                    "title": "Other Projects",
+                },
+                "projectPhase": {
+                    "href": None,
+                    "title": None,
+                },
+                "projectPhaseDefinition": {
+                    "href": None,
+                    "title": None,
+                },
+                "responsible": {
+                    "href": None,
+                },
+                "status": {
+                    "href": "/api/v3/statuses/1",
+                    "title": "New",
+                },
+                "type": {
+                    "href": "/api/v3/types/1",
+                    "title": "Task",
+                },
+                "version": {
+                    "href": None,
+                },
+            },
         },
-        "dueDate": None,
-        "duration": None,
-        "estimatedTime": None,
-        "ignoreNonWorkingDays": False,
-        "percentageDone": None,
-        "scheduleManually": True,
-        "startDate": None,
-        "subject": "Test Work Package 2",
     }

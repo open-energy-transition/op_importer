@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from logging import basicConfig, getLogger
+from typing import Any
 
 from pydantic import ValidationError
 from textual.logging import TextualHandler
@@ -52,7 +53,12 @@ def main(input_file: list[dict]) -> ValidationResponseList:
         ``input_file`` are validated by the API and the work packages are
         ingested.
     """
-    result = ValidationResponseList(validation_status=True, validation_errors=OrderedDict())
+    result = ValidationResponseList(
+        validation_status=True, validation_errors=OrderedDict(), validation_results=OrderedDict()
+    )
+
+    validation_results: dict[int, Any] = {}
+    validation_errors = {}
 
     for index, item in enumerate(input_file):
         error_list = []
@@ -73,8 +79,11 @@ def main(input_file: list[dict]) -> ValidationResponseList:
                 result.validation_status = False
             else:
                 logger.info(f"Item '{item.get('subject', 'Unknown')}' is valid.")
-                result.validation_results = response.validation_results
+                validation_results[index] = response.validation_results
 
-        result.validation_errors[index] = error_list
+        validation_errors[index] = error_list
+
+    result.validation_results = validation_results
+    result.validation_errors = validation_errors
 
     return result

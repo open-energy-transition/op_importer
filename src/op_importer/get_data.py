@@ -122,19 +122,3 @@ def create_project(payload: dict) -> tuple[int, dict]:
     url = f"{API_URL}/projects"
     response = requests.post(url, headers=HEADERS, auth=AUTH, json=payload)
     return response.status_code, response.json()
-
-
-if __name__ == "__main__":
-
-    status, response = get_workpackage_form(workspace_id=6)
-    print("Status:", status)
-    if status == 200:
-        payload = response["_embedded"]["payload"]
-        if response["_embedded"]["validationErrors"]:
-            for field, error in response["_embedded"]["validationErrors"].items():
-                print(f"Validation error for '{field}': {error['message']}")
-            response["_embedded"]["payload"]["subject"] = "Test Work Package"
-            status, response = create_workpackage(payload)
-            print("Status:", status)
-            if status == 200:
-                print("")
