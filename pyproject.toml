@@ -1,6 +1,7 @@
 [project]
 name = "op_importer"
 requires-python = ">= 3.13"
+license= "MIT"
 scripts = { op_import = "op_importer.app:app" }
 version = "0.1.0"
 dependencies = ["python-dotenv>=1.2.1,<2", "pytest"]
