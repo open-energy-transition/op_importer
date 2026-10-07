@@ -18,12 +18,19 @@ OpenProject:
     OPENPROJECT_API_KEY="<yourAPIkeywillhavelotsoflettersandnumbers02938329909809098089>"
     OPENPROJECT_API_URL="https://my.openproject.com/api/v3"
 
-Prepare a csv file with the exact headers::
+Prepare a csv file with the headers:
 
-    subject,description,project,status,work_package_type,startDate,dueDate
+    subject,description,status,work_package_type,startDate,dueDate
 
-Run the App from the command line, select your CSV file and upload your new work packages
-to your OpenProject installation
+An optional `project` column sets the target project ID per row. Dates use `DD/MM/YYYY`.
+
+Run the App from the command line, then:
+
+1. Select your CSV file. It is loaded and validated at once.
+2. Select the project to import into. It overrides the `project` column for every row, and the
+   rows are validated again.
+3. Press Ingest once all rows are valid to upload your new work packages to your OpenProject
+   installation.
 
 ## Develop op_importer
 

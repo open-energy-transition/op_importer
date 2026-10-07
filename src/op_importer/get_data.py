@@ -14,6 +14,15 @@ API_KEY: str = getenv("OPENPROJECT_API_KEY", "")
 
 HEADERS = {"Content-Type": "application/json"}
 AUTH = HTTPBasicAuth("apikey", API_KEY)
+MAX_PAGE_SIZE = 1000
+
+
+def get_collection(resource: str) -> dict:
+    params = {"pageSize": MAX_PAGE_SIZE}
+    collection = requests.get(f"{API_URL}/{resource}", headers=HEADERS, auth=AUTH, params=params).json()
+    if collection["count"] < collection["total"]:
+        raise ValueError(f"Fetched only {collection['count']} of {collection['total']} {resource}.")
+    return collection
 
 
 def get_users():
@@ -26,9 +35,8 @@ def get_roles():
     return response.json()
 
 
-def get_projects():
-    response = requests.get(f"{API_URL}/projects", headers=HEADERS, auth=AUTH)
-    return response.json()
+def get_projects() -> dict:
+    return get_collection("projects")
 
 
 def get_work_packages():
@@ -36,9 +44,8 @@ def get_work_packages():
     return response.json()
 
 
-def get_types():
-    response = requests.get(f"{API_URL}/types", headers=HEADERS, auth=AUTH)
-    return response.json()
+def get_types() -> dict:
+    return get_collection("types")
 
 
 def get_statuses():

@@ -6,7 +6,7 @@ import requests
 
 
 def elements(*items: dict) -> dict:
-    return {"_embedded": {"elements": list(items)}}
+    return {"_embedded": {"elements": list(items)}, "count": len(items), "total": len(items)}
 
 
 @dataclass
@@ -23,7 +23,7 @@ def fake_api(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict]:
     routes: dict[str, dict] = {
         "/users": elements(),
         "/roles": elements(),
-        "/projects": elements({"id": 4, "name": "Project 4"}),
+        "/projects": elements({"id": 4, "name": "Project 4"}, {"id": 5, "name": "Project 5"}),
         "/work_packages": elements(),
         "/types": elements({"id": 3}),
         "/statuses": elements(),
@@ -32,7 +32,8 @@ def fake_api(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict]:
 
     def respond(url: str, **kwargs: Any) -> FakeResponse:
         [route] = [route for route in routes if url.endswith(route)]
-        return FakeResponse(200, routes[route])
+        payload = routes[route]
+        return FakeResponse(422 if payload.get("_type") == "Error" else 200, payload)
 
     monkeypatch.setattr(requests, "get", respond)
     monkeypatch.setattr(requests, "post", respond)

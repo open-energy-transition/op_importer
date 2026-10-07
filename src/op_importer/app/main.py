@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from csv import QUOTE_NOTNULL, DictReader
 from datetime import datetime
@@ -5,6 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from rich.text import Text
+from textual import work
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import (
@@ -41,6 +43,8 @@ COLUMN_LABELS: dict[str, str] = {
     "startDate": "Start Date",
     "dueDate": "Due Date",
 }
+
+REQUIRED_HEADERS = set(WorkPackage.model_fields) - {"project"}
 
 CsvRow = dict[str, str | datetime | None]
 
@@ -86,21 +90,14 @@ class OpenProjectImporterApp(App[int]):
     def compose(self) -> ComposeResult:
         self.data: list[CsvRow] | None = None
         self.results: ValidationResponseList | None = None
+        self.project: dict | None = None
         self.get_data()
         yield Header()
         yield Label("Select a CSV file to import:")
-        yield Horizontal(
-            Vertical(
-                FilteredDirectoryTree("./"),
-                Button("Load Selected File", variant="primary", id="load_button", disabled=True),
-            ),
-            Vertical(
-                WorkPackageTable(id="table"), Button("Validate", id="validate_button", variant="success", disabled=True)
-            ),
-        )
+        yield Horizontal(FilteredDirectoryTree("./"), WorkPackageTable(id="table"))
         yield Rule()
         project_items = [ListItem(Label(name, markup=False)) for name in self.get_project_names()]
-        yield Label("Select a project to import into:")
+        yield Label("Select a project to import into:", id="project_label")
         yield Horizontal(
             ListView(*project_items),
             Vertical(
@@ -112,29 +109,35 @@ class OpenProjectImporterApp(App[int]):
         yield Footer()
 
     def on_directory_tree_file_selected(self, event: DirectoryTree.FileSelected) -> None:
-        self.file = None
-        if event.path.is_file() and event.path.name.endswith(".csv"):
-            self.file = event.path
-            self.query_one("#load_button", Button).disabled = False
-        else:
-            self.query_one("#load_button", Button).disabled = True
-        return
+        self.load_file(event.path)
 
-    def load_selected_file(self) -> None:
-        assert self.file is not None
-        # Clear loaded data and results before loading new file
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        self.project = self.projects["_embedded"]["elements"][event.index]
+        label = Text(f"Importing into: {self.project['name']} (ID {self.project['id']})")
+        self.query_one("#project_label", Label).update(label)
+        if self.data is not None:
+            self.apply_and_validate()
+
+    def lock_inputs(self, locked: bool) -> None:
+        self.query_one(FilteredDirectoryTree).disabled = locked
+        self.query_one(ListView).disabled = locked
+
+    def update_ingest_button(self) -> None:
+        self.query_one("#ingest_button", Button).disabled = self.results is None or not self.results.validation_status
+
+    def load_file(self, path: Path) -> None:
+        self.workers.cancel_group(self, "validate")
         self.data = None
         self.results = None
-        # Clear the table before loading new data
+        self.update_ingest_button()
         table = self.query_one("#table", WorkPackageTable)
+        table.loading = False
         table.clear()
-        text_editor = self.query_one("#editor", TextArea)
-        text_editor.clear()
+        self.query_one("#editor", TextArea).clear()
 
-        # Load the selected file and validate the data
-        with open(self.file, "r") as f:
+        with open(path, "r") as f:
             reader = DictReader(f, quoting=QUOTE_NOTNULL)
-            if not set(WorkPackage.model_fields).issubset(reader.fieldnames or ()):
+            if not REQUIRED_HEADERS.issubset(reader.fieldnames or ()):
                 self.notify(
                     "Invalid CSV format. Please ensure the file has the correct headers.",
                     title="CSV Format Error",
@@ -143,84 +146,78 @@ class OpenProjectImporterApp(App[int]):
                 return
 
             data = list(reader)
-        # Convert date strings to datetime objects
         for item in data:
+            item.setdefault("project", None)
             if item["startDate"]:
                 item["startDate"] = datetime.strptime(item["startDate"], "%d/%m/%Y")
             if item["dueDate"]:
                 item["dueDate"] = datetime.strptime(item["dueDate"], "%d/%m/%Y")
-        # Store the loaded data in the app state for validation and ingestion
         self.data = data
+        self.apply_and_validate()
 
-        # Load the data render the results in the table
-        for index, item in enumerate(data):
+    def apply_and_validate(self) -> None:
+        assert self.data is not None
+        if self.project is not None:
+            for item in self.data:
+                item["project"] = str(self.project["id"])
+        self.results = None
+        self.update_ingest_button()
+        self.query_one("#editor", TextArea).clear()
+        table = self.query_one("#table", WorkPackageTable)
+        table.clear()
+        for index, item in enumerate(self.data):
             table.add_row(*(table_cell(item[field]) for field in WorkPackage.model_fields), key=str(index))
+        self.validate_data()
 
-    def validate_data(self) -> None:
-        if not self.data:
-            self.notify(
-                "No data loaded. Please load a CSV file before validating.", title="No Data", severity="warning"
-            )
-            return
-        self.results = load_data(self.data)
-        # Display the results in the text editor
-        if self.results.validation_status is False:
-            self.notify("Validation failed. Click the red * for details.", title="Validation Error", severity="warning")
-
-            # Update the table to show which rows have validation errors
-            table: WorkPackageTable = self.query_one("#table", WorkPackageTable)
-            for key, errors in self.results.validation_errors.items():
-                for error in errors:
-                    if error["field"] in table.columns:
-                        table.update_cell(row_key=str(key), column_key=error["field"], value=Text("*", style="red"))
-                    else:
-                        self.notify(
-                            f"Row {key + 1}, {error['field']}: {error['message']}",
-                            title="Validation Error",
-                            severity="error",
-                            markup=False,
-                        )
-        else:
+    @work(exclusive=True, group="validate")
+    async def validate_data(self) -> None:
+        assert self.data is not None
+        table = self.query_one("#table", WorkPackageTable)
+        table.loading = True
+        results = await asyncio.to_thread(load_data, [dict(item) for item in self.data])
+        table.loading = False
+        self.results = results
+        self.update_ingest_button()
+        if results.validation_status:
             self.notify("Validation successful.", title="Success", severity="information")
+            return
 
-    def ingest_data(self) -> None:
-        """Ingest the validated data into OpenProject."""
-        if self.results:
-            for key, validated_item in self.results.validation_results.items():
-                status, response = create_workpackage(validated_item)
-                if status >= 200 and status < 300:
-                    self.notify(
-                        f"Work package '{validated_item['subject']}' ingested successfully.",
-                        title="Ingestion Success",
-                        severity="information",
-                        markup=False,
-                    )
+        self.notify("Validation failed. Click the red * for details.", title="Validation Error", severity="warning")
+        for key, errors in results.validation_errors.items():
+            for error in errors:
+                if error["field"] in table.columns:
+                    table.update_cell(row_key=str(key), column_key=error["field"], value=Text("*", style="red"))
                 else:
                     self.notify(
-                        f"Failed to ingest work package '{validated_item}'.",
-                        title="Ingestion Error",
+                        f"Row {key + 1}, {error['field']}: {error['message']}",
+                        title="Validation Error",
                         severity="error",
                         markup=False,
                     )
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        button_id = event.button.id
-        if button_id == "load_button":
-            self.load_selected_file()
-            if self.data:
-                self.query_one("#validate_button", Button).disabled = False
+    @work(group="ingest")
+    async def ingest_data(self, results: ValidationResponseList) -> None:
+        table = self.query_one("#table", WorkPackageTable)
+        table.loading = True
+        created = 0
+        for index, payload in results.validation_results.items():
+            status, response = await asyncio.to_thread(create_workpackage, payload)
+            if 200 <= status < 300:
+                created += 1
             else:
-                self.query_one("#validate_button", Button).disabled = True
-                self.query_one("#ingest_button", Button).disabled = True
-        elif button_id == "validate_button":
-            self.validate_data()
-            if self.results:
-                if self.results.validation_status is True:
-                    self.query_one("#ingest_button", Button).disabled = False
-                else:
-                    self.query_one("#ingest_button", Button).disabled = True
-        elif button_id == "ingest_button":
-            self.ingest_data()
+                message = f"Row {index + 1}: {response['message']}"
+                self.notify(message, title="Ingestion Error", severity="error", markup=False)
+        table.loading = False
+        self.lock_inputs(False)
+        total = len(results.validation_results)
+        self.notify(f"Created {created} of {total} work packages.", title="Ingestion", severity="information")
+
+    def on_button_pressed(self) -> None:
+        assert self.results is not None
+        self.lock_inputs(True)
+        self.ingest_data(self.results)
+        self.results = None
+        self.update_ingest_button()
 
     def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
         row_key = event.cell_key.row_key.value
