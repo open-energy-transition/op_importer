@@ -2,7 +2,7 @@ import asyncio
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pytest
 import requests
@@ -17,6 +17,7 @@ from op_importer.app.main import (
 )
 
 TEST_CSV = Path(__file__).parent / "fixtures" / "test.csv"
+INVALID_HEADERS = Path(__file__).parent / "fixtures" / "invalid_headers.csv"
 HEADERS = "subject,description,status,work_package_type,startDate,dueDate"
 WITH_PROJECT = f"{HEADERS},project\nTask,,1,3,,,4\n"
 WITHOUT_PROJECT = f"{HEADERS}\nTask,,1,3,,\n"
@@ -37,18 +38,33 @@ class Observed:
     inputs_after: tuple[bool, bool]
 
 
-@pytest.fixture
-def ingest_gate(fake_api: dict[str, dict], monkeypatch: pytest.MonkeyPatch) -> threading.Event:
+def gate_posts(monkeypatch: pytest.MonkeyPatch, suffix: str) -> threading.Event:
     gate = threading.Event()
     respond = requests.post
 
     def gated_post(url: str, **kwargs: Any) -> Any:
-        if url.endswith("/work_packages"):
+        if url.endswith(suffix):
             assert gate.wait(timeout=10)
         return respond(url, **kwargs)
 
     monkeypatch.setattr(requests, "post", gated_post)
     return gate
+
+
+@pytest.fixture
+def ingest_gate(fake_api: dict[str, dict], monkeypatch: pytest.MonkeyPatch) -> threading.Event:
+    return gate_posts(monkeypatch, "/work_packages")
+
+
+@pytest.fixture
+def form_gate(fake_api: dict[str, dict], monkeypatch: pytest.MonkeyPatch) -> threading.Event:
+    return gate_posts(monkeypatch, "/work_packages/form")
+
+
+def select_project(app: OpenProjectImporterApp, index: int) -> None:
+    list_view = app.query_one(ListView)
+    list_view.index = index
+    list_view.action_select_cursor()
 
 
 def inputs_disabled(app: OpenProjectImporterApp) -> tuple[bool, bool]:
@@ -57,7 +73,7 @@ def inputs_disabled(app: OpenProjectImporterApp) -> tuple[bool, bool]:
 
 async def settle(pilot: Pilot) -> None:
     await pilot.pause()
-    app_workers = [worker for worker in pilot.app.workers if worker.node is pilot.app]
+    app_workers = [worker for worker in pilot.app.workers if worker.node is pilot.app and not worker.is_cancelled]
     await asyncio.gather(*(worker.wait() for worker in app_workers))
     await pilot.pause()
 
@@ -68,9 +84,7 @@ async def run_app(csv: Path, project_index: int | None = None, ingest_gate: thre
         app.load_file(csv)
         await settle(pilot)
         if project_index is not None:
-            list_view = app.query_one(ListView)
-            list_view.index = project_index
-            list_view.action_select_cursor()
+            select_project(app, project_index)
             await settle(pilot)
         inputs_during_ingest: tuple[bool, bool] | None = None
         if ingest_gate is not None:
@@ -175,3 +189,39 @@ def test_ingest_locks_inputs_and_reports_outcome(
     assert toasts <= set(observed.toasts)
     assert observed.ingest_disabled
     assert (observed.inputs_during_ingest, observed.inputs_after) == ((True, True), (False, False))
+
+
+SUPERSEDE: dict[str, Callable[[OpenProjectImporterApp], None]] = {
+    "invalid-headers": lambda app: app.load_file(INVALID_HEADERS),
+    "unknown-project": lambda app: select_project(app, 1),
+}
+
+
+@pytest.mark.parametrize("running", [True, False], ids=["running", "settled"])
+@pytest.mark.parametrize("supersede", SUPERSEDE.values(), ids=SUPERSEDE.keys())
+def test_superseded_validation_cannot_enable_ingest(
+    fake_api: dict[str, dict],
+    form_gate: threading.Event,
+    supersede: Callable[[OpenProjectImporterApp], None],
+    running: bool,
+) -> None:
+    async def scenario() -> tuple[bool, bool]:
+        app = OpenProjectImporterApp()
+        async with app.run_test(notifications=True) as pilot:
+            fake_api["/projects"] = {
+                "_embedded": {"elements": [{"id": 4, "name": "Project 4"}]},
+                "count": 1,
+                "total": 1,
+            }
+            app.load_file(TEST_CSV)
+            await pilot.pause()
+            if not running:
+                form_gate.set()
+                await settle(pilot)
+            supersede(app)
+            await pilot.pause()
+            form_gate.set()
+            await settle(pilot)
+            return app.query_one("#ingest_button", Button).disabled, app.query_one("#table", WorkPackageTable).loading
+
+    assert asyncio.run(scenario()) == (True, False)
