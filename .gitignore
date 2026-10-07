@@ -24,3 +24,5 @@ dev/
 .mypy_cache/
 .pytest_cache/
 textual.log
+*.csv
+.vscode/
