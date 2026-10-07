@@ -6,15 +6,16 @@ It checks for the presence of required fields, correct data types,
 and valid values according to the OpenProject API specifications.
 """
 
+from dataclasses import dataclass
 from logging import getLogger
 from os import getenv
-from typing import Any
+from typing import Any, Self
 
 import requests
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
 
-from .data_model import ValidationResponse, WorkPackage
+from .data_model import API_FIELD_NAMES, ValidationResponse, WorkPackage
 from .get_data import get_projects, get_types
 
 logger = getLogger(__name__)
@@ -27,20 +28,33 @@ HEADERS = {"Content-Type": "application/json"}
 AUTH = HTTPBasicAuth("apikey", API_KEY)
 
 
+def element_ids(collection: dict) -> frozenset[int]:
+    return frozenset(element["id"] for element in collection["_embedded"]["elements"])
+
+
+@dataclass(frozen=True)
+class KnownIds:
+    projects: frozenset[int]
+    types: frozenset[int]
+
+    @classmethod
+    def fetch(cls) -> Self:
+        return cls(projects=element_ids(get_projects()), types=element_ids(get_types()))
+
+
 class Validate:
     """Base class for validating data for OpenProject API requests."""
 
-    def __init__(self, payload: WorkPackage):
+    def __init__(self, payload: WorkPackage, known_ids: KnownIds):
         self._payload: WorkPackage = payload
+        self.known_ids = known_ids
         self._errors: list[dict[str, str]] = []
         self.validated_response: dict = {}
 
     def validate_project_id(self) -> bool:
         """Validate that the provided project ID exists in OpenProject."""
         project_id = self.payload.project
-        projects = get_projects()
-        project_ids = [project["id"] for project in projects["_embedded"]["elements"]]
-        if project_id not in project_ids:
+        if project_id not in self.known_ids.projects:
             self.errors.append(
                 {
                     "field": "project",
@@ -53,9 +67,7 @@ class Validate:
     def validate_type_id(self) -> bool:
         """Validate that the provided type ID exists in OpenProject."""
         type_id = self.payload.work_package_type
-        types = get_types()
-        type_ids = [type_["id"] for type_ in types["_embedded"]["elements"]]
-        if type_id not in type_ids:
+        if type_id not in self.known_ids.types:
             self.errors.append(
                 {
                     "field": "work_package_type",
@@ -80,13 +92,11 @@ class Validate:
             return False
 
         status, response = self.get_form()
-        print("Status:", status)
         logger.info(f"Validation response: {response}")
         if status == 200:
-            print(response["_embedded"]["validationErrors"])
             if errors := response["_embedded"]["validationErrors"]:
                 for field, error in errors.items():
-                    self.errors.append({"field": field, "message": error["message"]})
+                    self.errors.append({"field": API_FIELD_NAMES.get(field, field), "message": error["message"]})
                 return False
             else:
                 self.validated_response = response["_embedded"]["payload"]
@@ -141,20 +151,18 @@ class ValidateProjectWorkPackage(Validate):
 
 class GetValidator:
 
-    def select_validator(self, payload: WorkPackage) -> Validate:
+    def select_validator(self, payload: WorkPackage, known_ids: KnownIds) -> Validate:
         if isinstance(payload, WorkPackage):
-            validator = ValidateWorkPackage(payload)
-        elif isinstance(payload, WorkPackage) and hasattr(payload, "project"):
-            validator = ValidateProjectWorkPackage(payload)
+            validator = ValidateWorkPackage(payload, known_ids)
         else:
             raise NotImplementedError("Validation for asset type is not implemented.")
         return validator
 
 
-def validate(payload: WorkPackage) -> ValidationResponse:
+def validate(payload: WorkPackage, known_ids: KnownIds) -> ValidationResponse:
 
     validator = GetValidator()
-    validator_instance = validator.select_validator(payload)
+    validator_instance = validator.select_validator(payload, known_ids)
     status = validator_instance.validate()
 
     response = ValidationResponse(

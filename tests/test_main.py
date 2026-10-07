@@ -1,8 +1,10 @@
 from collections import OrderedDict
 
-from pytest import fixture
+from pytest import fixture, mark
 
 from op_importer import main
+
+pytestmark = mark.live
 
 
 @fixture(scope="module")

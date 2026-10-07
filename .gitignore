@@ -13,3 +13,16 @@ develop-eggs/
 dist/
 eggs/
 .eggs/
+# Secrets
+.env
+backuptoken.txt
+readme.md
+# local dev notes
+dev/
+# local tooling and logs
+.conda/
+.mypy_cache/
+.pytest_cache/
+textual.log
+*.csv
+.vscode/
