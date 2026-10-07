@@ -61,14 +61,14 @@ def main(input_file: list[dict]) -> ValidationResponseList:
     validation_errors = {}
 
     for index, item in enumerate(input_file):
-        error_list = []
+        error_list: list[dict[str, str]] = []
         # Use Pydantic model to validate the input data structure and types
         # before sending to API
         try:
             payload = WorkPackage(**item)
         except ValidationError as exc:
             for error in exc.errors():
-                error_list.append({"field": error["loc"][0], "message": error["msg"]})
+                error_list.append({"field": str(error["loc"][0]), "message": error["msg"]})
                 logger.info(f"Validation error for item {error['loc'][0]} - {error['msg']}")
             result.validation_status = False
         else:

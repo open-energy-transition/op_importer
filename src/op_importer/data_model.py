@@ -12,7 +12,7 @@ class ValidationResponse(BaseModel):
 class ValidationResponseList(BaseModel):
     validation_status: bool
     validation_errors: dict[int, list[dict[str, str]]]
-    validation_results: dict[int, dict] | None = None
+    validation_results: dict[int, dict]
 
 
 class WorkPackage(BaseModel):
@@ -65,3 +65,8 @@ class WorkPackage(BaseModel):
             return value.date().isoformat()
         else:
             return None
+
+
+API_FIELD_NAMES: dict[str, str] = {
+    f.serialization_alias: name for name, f in WorkPackage.model_fields.items() if f.serialization_alias
+}

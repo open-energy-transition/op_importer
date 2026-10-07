@@ -14,7 +14,7 @@ import requests
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
 
-from .data_model import ValidationResponse, WorkPackage
+from .data_model import API_FIELD_NAMES, ValidationResponse, WorkPackage
 from .get_data import get_projects, get_types
 
 logger = getLogger(__name__)
@@ -80,13 +80,11 @@ class Validate:
             return False
 
         status, response = self.get_form()
-        print("Status:", status)
         logger.info(f"Validation response: {response}")
         if status == 200:
-            print(response["_embedded"]["validationErrors"])
             if errors := response["_embedded"]["validationErrors"]:
                 for field, error in errors.items():
-                    self.errors.append({"field": field, "message": error["message"]})
+                    self.errors.append({"field": API_FIELD_NAMES.get(field, field), "message": error["message"]})
                 return False
             else:
                 self.validated_response = response["_embedded"]["payload"]
@@ -144,8 +142,6 @@ class GetValidator:
     def select_validator(self, payload: WorkPackage) -> Validate:
         if isinstance(payload, WorkPackage):
             validator = ValidateWorkPackage(payload)
-        elif isinstance(payload, WorkPackage) and hasattr(payload, "project"):
-            validator = ValidateProjectWorkPackage(payload)
         else:
             raise NotImplementedError("Validation for asset type is not implemented.")
         return validator

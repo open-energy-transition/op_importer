@@ -17,3 +17,10 @@ eggs/
 .env
 backuptoken.txt
 readme.md
+# local dev notes
+dev/
+# local tooling and logs
+.conda/
+.mypy_cache/
+.pytest_cache/
+textual.log

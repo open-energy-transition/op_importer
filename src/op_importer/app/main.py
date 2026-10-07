@@ -21,7 +21,7 @@ from textual.widgets import (
 )
 
 from op_importer import main as load_data
-from op_importer.data_model import ValidationResponseList
+from op_importer.data_model import ValidationResponseList, WorkPackage
 from op_importer.get_data import (
     create_workpackage,
     get_projects,
@@ -31,6 +31,24 @@ from op_importer.get_data import (
     get_users,
     get_work_packages,
 )
+
+COLUMN_LABELS: dict[str, str] = {
+    "subject": "Subject",
+    "description": "Description",
+    "project": "Project",
+    "work_package_type": "Type",
+    "status": "Status",
+    "startDate": "Start Date",
+    "dueDate": "Due Date",
+}
+
+CsvRow = dict[str, str | datetime | None]
+
+
+def table_cell(value: str | datetime | None) -> Text | None:
+    if isinstance(value, datetime):
+        return Text(value.date().isoformat())
+    return None if value is None else Text(value)
 
 
 class FilteredDirectoryTree(DirectoryTree):
@@ -45,15 +63,7 @@ class FilteredDirectoryTree(DirectoryTree):
 class WorkPackageTable(DataTable):
 
     def on_mount(self) -> None:
-        self.add_columns(
-            ("Subject", "subject"),
-            ("Description", "description"),
-            ("Project", "project"),
-            ("Type", "work_package_type"),
-            ("Status", "status"),
-            ("Start Date", "startDate"),
-            ("Due Date", "dueDate"),
-        )
+        self.add_columns(*((COLUMN_LABELS[field], field) for field in WorkPackage.model_fields))
 
 
 class OpenProjectImporterApp(App[int]):
@@ -62,7 +72,7 @@ class OpenProjectImporterApp(App[int]):
     TITLE = "OpenProject Importer"
     SUB_TITLE = "Validate and Ingest data into OpenProject"
 
-    def get_data(self):
+    def get_data(self) -> None:
         self.users = get_users()
         self.roles = get_roles()
         self.projects = get_projects()
@@ -70,11 +80,11 @@ class OpenProjectImporterApp(App[int]):
         self.types = get_types()
         self.statuses = get_statuses()
 
-    def get_project_names(self):
+    def get_project_names(self) -> list[str]:
         return [project["name"] for project in self.projects["_embedded"]["elements"]]
 
     def compose(self) -> ComposeResult:
-        self.data = None
+        self.data: list[CsvRow] | None = None
         self.results: ValidationResponseList | None = None
         self.get_data()
         yield Header()
@@ -89,7 +99,7 @@ class OpenProjectImporterApp(App[int]):
             ),
         )
         yield Rule()
-        project_items = [ListItem(Label(f"{name}")) for name in self.get_project_names()]
+        project_items = [ListItem(Label(name, markup=False)) for name in self.get_project_names()]
         yield Label("Select a project to import into:")
         yield Horizontal(
             ListView(*project_items),
@@ -111,6 +121,7 @@ class OpenProjectImporterApp(App[int]):
         return
 
     def load_selected_file(self) -> None:
+        assert self.file is not None
         # Clear loaded data and results before loading new file
         self.data = None
         self.results = None
@@ -120,42 +131,30 @@ class OpenProjectImporterApp(App[int]):
         text_editor = self.query_one("#editor", TextArea)
         text_editor.clear()
 
-        expected_headers = {"subject", "description", "project", "work_package_type", "status", "startDate", "dueDate"}
         # Load the selected file and validate the data
         with open(self.file, "r") as f:
             reader = DictReader(f, quoting=QUOTE_NOTNULL)
-            fieldnames: list[str] = reader.fieldnames
-            if set(fieldnames).intersection(expected_headers) != expected_headers:
+            if not set(WorkPackage.model_fields).issubset(reader.fieldnames or ()):
                 self.notify(
                     "Invalid CSV format. Please ensure the file has the correct headers.",
                     title="CSV Format Error",
                     severity="error",
                 )
-                print(reader.fieldnames)
                 return
 
             data = list(reader)
         # Convert date strings to datetime objects
         for item in data:
             if item["startDate"]:
-                item["startDate"] = datetime.strptime(item["startDate"], "%d/%m/%Y") if item["startDate"] else None
+                item["startDate"] = datetime.strptime(item["startDate"], "%d/%m/%Y")
             if item["dueDate"]:
-                item["dueDate"] = datetime.strptime(item["dueDate"], "%d/%m/%Y") if item["dueDate"] else None
+                item["dueDate"] = datetime.strptime(item["dueDate"], "%d/%m/%Y")
         # Store the loaded data in the app state for validation and ingestion
         self.data = data
 
         # Load the data render the results in the table
         for index, item in enumerate(data):
-            table.add_row(
-                item["subject"],
-                item["description"],
-                item["project"],
-                item["work_package_type"],
-                item["status"],
-                item["startDate"].date().isoformat() if item["startDate"] else None,  # typing = datetime
-                item["dueDate"].date().isoformat() if item["dueDate"] else None,  # typing = datetime
-                key=str(index),
-            )
+            table.add_row(*(table_cell(item[field]) for field in WorkPackage.model_fields), key=str(index))
 
     def validate_data(self) -> None:
         if not self.data:
@@ -172,7 +171,15 @@ class OpenProjectImporterApp(App[int]):
             table: WorkPackageTable = self.query_one("#table", WorkPackageTable)
             for key, errors in self.results.validation_errors.items():
                 for error in errors:
-                    table.update_cell(row_key=str(key), column_key=error["field"], value=Text("*", style="red"))
+                    if error["field"] in table.columns:
+                        table.update_cell(row_key=str(key), column_key=error["field"], value=Text("*", style="red"))
+                    else:
+                        self.notify(
+                            f"Row {key + 1}, {error['field']}: {error['message']}",
+                            title="Validation Error",
+                            severity="error",
+                            markup=False,
+                        )
         else:
             self.notify("Validation successful.", title="Success", severity="information")
 
@@ -185,11 +192,15 @@ class OpenProjectImporterApp(App[int]):
                     self.notify(
                         f"Work package '{validated_item['subject']}' ingested successfully.",
                         title="Ingestion Success",
-                        severity="success",
+                        severity="information",
+                        markup=False,
                     )
                 else:
                     self.notify(
-                        f"Failed to ingest work package '{validated_item}'.", title="Ingestion Error", severity="error"
+                        f"Failed to ingest work package '{validated_item}'.",
+                        title="Ingestion Error",
+                        severity="error",
+                        markup=False,
                     )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -212,9 +223,10 @@ class OpenProjectImporterApp(App[int]):
             self.ingest_data()
 
     def on_data_table_cell_selected(self, event: DataTable.CellSelected) -> None:
-        row_key = int(event.cell_key.row_key.value)
+        row_key = event.cell_key.row_key.value
+        assert row_key is not None
         if self.results:
-            validation_errors: list[dict] = self.results.validation_errors[row_key]
+            validation_errors: list[dict] = self.results.validation_errors[int(row_key)]
             column_key = event.cell_key.column_key.value
             text_editor = self.query_one("#editor", TextArea)
             for error in validation_errors:
@@ -223,7 +235,7 @@ class OpenProjectImporterApp(App[int]):
                     break
 
 
-def main():
+def main() -> None:
     app = OpenProjectImporterApp()
     app.run()
     sys.exit(app.return_code or 0)

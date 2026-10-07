@@ -1,7 +1,21 @@
+import pytest
+
 from op_importer.data_model import ValidationResponse, WorkPackage
 from op_importer.validate import ValidateWorkPackage, validate
 
 
+@pytest.mark.parametrize(
+    ("api_key", "expected_field"),
+    [("type", "work_package_type"), ("subject", "subject"), ("priority", "priority")],
+)
+def test_validate_maps_api_error_fields(fake_api: dict[str, dict], api_key: str, expected_field: str) -> None:
+    fake_api["/work_packages/form"]["_embedded"]["validationErrors"] = {api_key: {"message": "is invalid"}}
+    payload = WorkPackage(subject="Test Work Package", project=4, work_package_type=3)
+
+    assert validate(payload).validation_errors == [{"field": expected_field, "message": "is invalid"}]
+
+
+@pytest.mark.live
 class TestValidateWorkPackage:
 
     def test_validate_valid_payload(self):

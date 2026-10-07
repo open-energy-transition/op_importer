@@ -1,4 +1,8 @@
+import pytest
+
 from op_importer.get_data import create_workpackage, get_users
+
+pytestmark = pytest.mark.live
 
 
 def test_connection():
