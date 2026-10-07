@@ -13,3 +13,7 @@ develop-eggs/
 dist/
 eggs/
 .eggs/
+# Secrets
+.env
+backuptoken.txt
+readme.md
